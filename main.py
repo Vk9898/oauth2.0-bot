@@ -1,13 +1,13 @@
+import os
 import base64
 import hashlib
-import os
 import re
-import json
 import requests
 import redis
 from requests_oauthlib import OAuth2Session
-from flask import Flask, redirect, session, request
+from flask import Flask, redirect, session, request, jsonify
 
+# Read the REDIS_URL from the environment variables
 r = redis.from_url(os.environ["REDIS_URL"])
 
 app = Flask(__name__)
@@ -21,66 +21,56 @@ redirect_uri = os.environ.get("REDIRECT_URI")
 
 scopes = ["tweet.read", "users.read", "tweet.write", "offline.access"]
 
-code_verifier = base64.urlsafe_b64encode(os.urandom(30)).decode("utf-8")
-code_verifier = re.sub("[^a-zA-Z0-9]+", "", code_verifier)
+def generate_code_verifier():
+    code_verifier = base64.urlsafe_b64encode(os.urandom(30)).decode("utf-8")
+    return re.sub("[^a-zA-Z0-9]+", "", code_verifier)
 
-code_challenge = hashlib.sha256(code_verifier.encode("utf-8")).digest()
-code_challenge = base64.urlsafe_b64encode(code_challenge).decode("utf-8")
-code_challenge = code_challenge.replace("=", "")
-
-def make_token():
-    return OAuth2Session(client_id, redirect_uri=redirect_uri, scope=scopes)
-
-def parse_dog_fact():
-    url = "http://dog-api.kinduff.com/api/facts"
-    dog_fact = requests.request("GET", url).json()
-    return dog_fact["facts"][0]
-
-def post_tweet(payload, token):
-    print("Tweeting!")
-    return requests.request(
-        "POST",
-        "https://api.twitter.com/2/tweets",
-        json=payload,
-        headers={
-            "Authorization": "Bearer {}".format(token["access_token"]),
-            "Content-Type": "application/json",
-        },
-    )
+def generate_code_challenge(code_verifier):
+    code_challenge = hashlib.sha256(code_verifier.encode("utf-8")).digest()
+    code_challenge = base64.urlsafe_b64encode(code_challenge).decode("utf-8")
+    return code_challenge.replace("=", "")
 
 @app.route("/")
 def demo():
-    global twitter
-    twitter = make_token()
+    twitter = OAuth2Session(client_id, redirect_uri=redirect_uri, scope=scopes)
+    
+    code_verifier = generate_code_verifier()
+    code_challenge = generate_code_challenge(code_verifier)
+    
+    session["code_verifier"] = code_verifier
+    session["oauth_state"] = twitter.state
+    
     authorization_url, state = twitter.authorization_url(
         auth_url, code_challenge=code_challenge, code_challenge_method="S256"
     )
-    session["oauth_state"] = state
     return redirect(authorization_url)
 
 @app.route("/oauth/callback", methods=["GET"])
 def callback():
     try:
         code = request.args.get("code")
-        print(f"Code received: {code}")
+        state = request.args.get("state")
+        
+        if state != session.get("oauth_state"):
+            return "State mismatch. Potential CSRF attack.", 400
+        
+        code_verifier = session.get("code_verifier")
+        
+        twitter = OAuth2Session(client_id, redirect_uri=redirect_uri, scope=scopes)
+        
         token = twitter.fetch_token(
             token_url=token_url,
             client_secret=client_secret,
             code_verifier=code_verifier,
             code=code,
         )
-        print(f"Token fetched: {token}")
+        
         st_token = '"{}"'.format(token)
         j_token = json.loads(st_token)
         r.set("token", j_token)
-        doggie_fact = parse_dog_fact()
-        payload = {"text": "{}".format(doggie_fact)}
-        response = post_tweet(payload, token).json()
-        return response
+        return f"Token fetched and stored: {token}"
     except Exception as e:
-        print(f"Error during callback: {e}")
-        return f"Internal Server Error: {e}", 500
+        return f"Error during callback: {e}", 500
 
 if __name__ == "__main__":
-    print(app.url_map)
     app.run()
