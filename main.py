@@ -6,7 +6,6 @@ import json
 import time
 import requests
 import tweepy
-import redis
 from requests_oauthlib import OAuth2Session
 from flask import Flask, redirect, session, request
 
@@ -47,7 +46,7 @@ client = tweepy.Client(bearer_token=bearer_token, wait_on_rate_limit=True)
 
 # Fetch bot's username and ID
 try:
-    me = client.get_me(user_auth=True)
+    me = client.get_me()
     BOT_USERNAME = me.data.username
     BOT_ID = me.data.id
     print("Bot username:", BOT_USERNAME)
@@ -91,7 +90,7 @@ def get_recent_mentions(since_id=None):
             max_results=10,
             expansions=['author_id']
         )
-    except tweepy.errors.TweepyException as e:
+    except tweepy.TweepyException as e:
         print(f"Error fetching mentions: {e}")
         return None
 
@@ -120,7 +119,7 @@ def process_mentions():
 
                 chatbot_response = get_chatbot_response(user_message)
                 if len(chatbot_response) <= 280:
-                    post_reply(mention.id, chatbot_response, author_id)  
+                    post_reply(mention.id, chatbot_response, author_id)
                 else:
                     print(f"Error: Chatbot response too long.")
     
