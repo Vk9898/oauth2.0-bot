@@ -9,7 +9,7 @@ from requests_oauthlib import OAuth2Session
 from flask import Flask, redirect, session
 
 
-r = redis.from_url(os.environ["REDIS_URL_DOGS"])
+r = redis.from_url(os.environ["REDIS_URL"])
 
 app = Flask(__name__)
 app.secret_key = os.urandom(50)
