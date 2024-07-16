@@ -8,17 +8,30 @@ import requests
 import tweepy
 from requests_oauthlib import OAuth2Session
 from flask import Flask, redirect, session, request
+from dotenv import load_dotenv
 
 app = Flask(__name__)
 app.secret_key = os.urandom(50)
 
+# Load environment variables from .env file
+load_dotenv()
+
+# Access environment variables
+client_id = os.getenv("CLIENT_ID")
+client_secret = os.getenv("CLIENT_SECRET")
+redirect_uri = os.getenv("REDIRECT_URI")
+bearer_token = os.getenv("BEARER_TOKEN")
+chatbase_api_key = os.getenv("CHATBASE_API_KEY")
+chatbot_id = os.getenv("CHATBOT_ID")
+
+# Check if any variables are None
+if not all([client_id, client_secret, redirect_uri, bearer_token, chatbase_api_key, chatbot_id]):
+    print("One or more environment variables are missing or not loaded correctly.")
+    exit(1)
+
 # OAuth2 Configuration
-client_id = os.environ.get("CLIENT_ID")
-client_secret = os.environ.get("CLIENT_SECRET")
 auth_url = "https://twitter.com/i/oauth2/authorize"
 token_url = "https://api.twitter.com/2/oauth2/token"
-redirect_uri = os.environ.get("REDIRECT_URI")
-
 scopes = ["tweet.read", "users.read", "tweet.write", "offline.access"]
 
 code_verifier = base64.urlsafe_b64encode(os.urandom(30)).decode("utf-8")
@@ -32,28 +45,29 @@ def make_token():
     return OAuth2Session(client_id, redirect_uri=redirect_uri, scope=scopes)
 
 # Tweepy Configuration
-bearer_token = os.environ.get('BEARER_TOKEN')
-
 client = tweepy.Client(bearer_token=bearer_token, wait_on_rate_limit=True)
 
 # Fetch bot's username and ID
-me = client.get_me(user_auth=True)
-BOT_USERNAME = me.data.username
-BOT_ID = me.data.id
+try:
+    me = client.get_me(user_auth=True)
+    BOT_USERNAME = me.data.username
+    BOT_ID = me.data.id
+    print("Bot username:", BOT_USERNAME)
+except tweepy.TweepyException as e:
+    print(f"Error authenticating with Twitter API: {e}")
+    exit(1)
 
 # Chatbase API details
-CHATBASE_API_KEY = os.environ.get('CHATBASE_API_KEY')
 CHATBASE_API_URL = 'https://www.chatbase.co/api/v1/chat'
-CHATBOT_ID = os.environ.get('CHATBOT_ID')
 
 def get_chatbot_response(user_message):
     headers = {
         'Content-Type': 'application/json',
-        'Authorization': f'Bearer {CHATBASE_API_KEY}',
+        'Authorization': f'Bearer {chatbase_api_key}',
     }
     data = {
         "messages": [{"content": user_message, "role": "user"}],
-        "chatbot_id": CHATBOT_ID,
+        "chatbot_id": chatbot_id,
     }
 
     response = requests.post(CHATBASE_API_URL, headers=headers, json=data)
@@ -82,7 +96,7 @@ def post_reply(tweet_id, text, author_id=None):
         # Ensure the bot's username is in the reply
         text = f"@{author_id} {text}"
         client.create_tweet(text=text, in_reply_to_tweet_id=tweet_id)
-    except tweepy.errors.TweepyException as e:
+    except tweepy.TweepyException as e:
         print(f"Error posting reply: {e}")
 
 def process_mentions():
@@ -152,13 +166,6 @@ def callback():
         return f"An error occurred: {e}"
 
 if __name__ == "__main__":
-    # Check if we can access the Twitter API
-    try:
-        client.get_me()  # This will raise an exception if authentication fails
-    except tweepy.errors.TweepyException as e:
-        print(f"Error authenticating with Twitter API: {e}")
-        exit(1)  # Exit the script if authentication fails
-
     # Start processing mentions
     process_mentions()
     app.run(debug=True)
