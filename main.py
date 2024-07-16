@@ -36,13 +36,25 @@ code_challenge = code_challenge.replace("=", "")
 def make_token():
     return OAuth2Session(client_id, redirect_uri=redirect_uri, scope=scopes)
 
-# Tweepy Configuration
+# Tweepy Configuration for OAuth2
 bearer_token = os.environ.get('BEARER_TOKEN')
 
 # Debugging print for bearer token
 print(f"BEARER_TOKEN: {bearer_token}")
 
 client = tweepy.Client(bearer_token=bearer_token, wait_on_rate_limit=True)
+
+# Tweepy Configuration for OAuth1.0a
+consumer_key = os.environ.get('CONSUMER_KEY')
+consumer_secret = os.environ.get('CONSUMER_SECRET')
+access_token = os.environ.get('ACCESS_TOKEN')
+access_token_secret = os.environ.get('ACCESS_TOKEN_SECRET')
+
+auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
+auth.set_access_token(access_token, access_token_secret)
+
+# Use API class instead of Client for actions that require OAuth1.0a
+api = tweepy.API(auth)
 
 # Fetch bot's username and ID
 try:
@@ -97,7 +109,7 @@ def get_recent_mentions(since_id=None):
 def post_reply(tweet_id, text, author_id=None):
     try:
         text = f"@{author_id} {text}"
-        client.create_tweet(text=text, in_reply_to_tweet_id=tweet_id)
+        api.update_status(text=text, in_reply_to_status_id=tweet_id)
     except tweepy.TweepyException as e:
         print(f"Error posting reply: {e}")
 
