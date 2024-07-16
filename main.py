@@ -5,7 +5,6 @@ import re
 import json
 import time
 import requests
-import tweepy
 from requests_oauthlib import OAuth2Session
 from flask import Flask, redirect, session, request
 
@@ -19,11 +18,6 @@ auth_url = "https://twitter.com/i/oauth2/authorize"
 token_url = "https://api.twitter.com/2/oauth2/token"
 redirect_uri = os.environ.get("REDIRECT_URI")
 
-# Debugging prints for environment variables
-print(f"CLIENT_ID: {client_id}")
-print(f"CLIENT_SECRET: {client_secret}")
-print(f"REDIRECT_URI: {redirect_uri}")
-
 scopes = ["tweet.read", "users.read", "tweet.write", "offline.access"]
 
 code_verifier = base64.urlsafe_b64encode(os.urandom(30)).decode("utf-8")
@@ -36,44 +30,28 @@ code_challenge = code_challenge.replace("=", "")
 def make_token():
     return OAuth2Session(client_id, redirect_uri=redirect_uri, scope=scopes)
 
-# Tweepy Configuration for OAuth2
+# Twitter API Configuration
 bearer_token = os.environ.get('BEARER_TOKEN')
 
-# Debugging print for bearer token
-print(f"BEARER_TOKEN: {bearer_token}")
+def get_bot_info():
+    headers = {
+        "Authorization": f"Bearer {bearer_token}"
+    }
+    response = requests.get("https://api.twitter.com/2/users/me", headers=headers)
+    if response.status_code == 200:
+        return response.json()["data"]
+    else:
+        print(f"Error fetching bot info: {response.status_code}")
+        return None
 
-client = tweepy.Client(bearer_token=bearer_token, wait_on_rate_limit=True)
-
-# Tweepy Configuration for OAuth1.0a
-consumer_key = os.environ.get('CONSUMER_KEY')
-consumer_secret = os.environ.get('CONSUMER_SECRET')
-access_token = os.environ.get('ACCESS_TOKEN')
-access_token_secret = os.environ.get('ACCESS_TOKEN_SECRET')
-
-auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
-auth.set_access_token(access_token, access_token_secret)
-
-# Use API class instead of Client for actions that require OAuth1.0a
-api = tweepy.API(auth)
-
-# Fetch bot's username and ID
-try:
-    me = client.get_me()
-    BOT_USERNAME = me.data.username
-    BOT_ID = me.data.id
-    print("Bot username:", BOT_USERNAME)
-except tweepy.TweepyException as e:
-    print(f"Error authenticating with Twitter API: {e}")
-    exit(1)
+bot_info = get_bot_info()
+BOT_USERNAME = bot_info["username"]
+BOT_ID = bot_info["id"]
 
 # Chatbase API details
 CHATBASE_API_KEY = os.environ.get('CHATBASE_API_KEY')
 CHATBASE_API_URL = 'https://www.chatbase.co/api/v1/chat'
 CHATBOT_ID = os.environ.get('CHATBOT_ID')
-
-# Debugging prints for Chatbase
-print(f"CHATBASE_API_KEY: {CHATBASE_API_KEY}")
-print(f"CHATBOT_ID: {CHATBOT_ID}")
 
 def get_chatbot_response(user_message):
     headers = {
@@ -88,30 +66,43 @@ def get_chatbot_response(user_message):
     response = requests.post(CHATBASE_API_URL, headers=headers, json=data)
 
     if response.status_code == 200:
-        return response.json()['messages'][-1]['content']
+        return response.json()['messages'][-1]['content']  # Get the last message in the response
     else:
         print(f"Error: {response.status_code}, {response.text}")
         return "I'm sorry, I couldn't process your request."
 
 def get_recent_mentions(since_id=None):
-    try:
-        return client.get_users_mentions(
-            id=BOT_ID,
-            since_id=since_id,
-            tweet_fields=['id', 'text'],
-            max_results=10,
-            expansions=['author_id']
-        )
-    except tweepy.TweepyException as e:
-        print(f"Error fetching mentions: {e}")
+    headers = {
+        "Authorization": f"Bearer {bearer_token}"
+    }
+    params = {
+        "tweet.fields": "id,text,author_id",
+        "expansions": "author_id",
+        "max_results": 10
+    }
+    if since_id:
+        params["since_id"] = since_id
+
+    response = requests.get(f"https://api.twitter.com/2/users/{BOT_ID}/mentions", headers=headers, params=params)
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Error fetching mentions: {response.status_code}")
         return None
 
-def post_reply(tweet_id, text, author_id=None):
-    try:
-        text = f"@{author_id} {text}"
-        api.update_status(text=text, in_reply_to_status_id=tweet_id)
-    except tweepy.TweepyException as e:
-        print(f"Error posting reply: {e}")
+def post_reply(tweet_id, text, author_id):
+    headers = {
+        "Authorization": f"Bearer {bearer_token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "status": f"@{author_id} {text}",
+        "in_reply_to_status_id": tweet_id,
+        "auto_populate_reply_metadata": True
+    }
+    response = requests.post("https://api.twitter.com/2/tweets", headers=headers, json=payload)
+    if response.status_code != 201:
+        print(f"Error posting reply: {response.status_code}")
 
 def process_mentions():
     since_id = fetch_last_processed_mention_id()
@@ -123,19 +114,21 @@ def process_mentions():
             time.sleep(60)
             continue
 
-        if mentions.data:
-            for mention in mentions.data:
-                author_id = [user.username for user in mentions.includes['users'] if user.id == mention.author_id][0]
-                user_message = mention.text
-                print(f"Mention received from @{author_id}: {mention.text}")
+        if "data" in mentions:
+            # Process each mention and get author ID from expansions
+            for mention in mentions["data"]:
+                author_id = [user["username"] for user in mentions["includes"]["users"] if user["id"] == mention["author_id"]][0]
+                user_message = mention["text"]
+                print(f"Mention received from @{author_id}: {mention['text']}")
 
                 chatbot_response = get_chatbot_response(user_message)
                 if len(chatbot_response) <= 280:
-                    post_reply(mention.id, chatbot_response, author_id)
+                    post_reply(mention["id"], chatbot_response, author_id)
                 else:
                     print(f"Error: Chatbot response too long.")
-    
-            since_id = mentions.data[-1].id
+
+            # Update since_id after processing all mentions in this batch
+            since_id = mentions["data"][-1]["id"]
             store_last_processed_mention_id(since_id)
 
         time.sleep(60)
@@ -178,11 +171,10 @@ def callback():
         return f"An error occurred: {e}"
 
 if __name__ == "__main__":
-    try:
-        client.get_me()
-    except tweepy.TweepyException as e:
-        print(f"Error authenticating with Twitter API: {e}")
-        exit(1)
+    # Check if we can access the Twitter API
+    if bot_info is None:
+        exit(1)  # Exit the script if authentication fails
 
+    # Start processing mentions
     process_mentions()
     app.run(debug=True)
