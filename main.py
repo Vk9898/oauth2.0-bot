@@ -6,6 +6,7 @@ import json
 import time
 import requests
 import tweepy
+import redis
 from requests_oauthlib import OAuth2Session
 from flask import Flask, redirect, session, request
 
