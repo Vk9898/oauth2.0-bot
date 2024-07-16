@@ -2,5 +2,4 @@ Flask
 Gunicorn
 requests
 redis
-tweepy
 requests_oauthlib
