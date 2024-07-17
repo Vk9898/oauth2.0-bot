@@ -5,7 +5,6 @@ import re
 import json
 import requests
 import redis
-import logging
 from requests_oauthlib import OAuth2Session
 from flask import Flask, redirect, session, request
 
@@ -59,34 +58,28 @@ def demo():
     session["oauth_state"] = state
     return redirect(authorization_url)
 
-# ... (other imports)
-import logging
-
-# ... 
-logging.basicConfig(level=logging.INFO)
-
 @app.route("/oauth/callback", methods=["GET"])
 def callback():
     try:
-        # ... (fetch token as before)
-        logging.info(f"Token fetched: {token}")
-
-        # Store directly as a JSON string to avoid unnecessary conversions
-        r.set("token", json.dumps(token))  
-        logging.info("Token saved in Redis")
-        # ... (rest of the code remains the same)
+        code = request.args.get("code")
+        print(f"Code received: {code}")
+        token = twitter.fetch_token(
+            token_url=token_url,
+            client_secret=client_secret,
+            code_verifier=code_verifier,
+            code=code,
+        )
+        print(f"Token fetched: {token}")
+        st_token = '"{}"'.format(token)
+        j_token = json.loads(st_token)
+        r.set("token", j_token)
         doggie_fact = parse_dog_fact()
         payload = {"text": "{}".format(doggie_fact)}
-        response = post_tweet(payload, token)
-        if response.status_code == 201:
-            return "Tweet posted successfully!"
-        else:
-            logging.error(f"Error posting tweet: {response.status_code}, {response.text}")
-            return f"Error posting tweet: {response.text}", response.status_code
+        response = post_tweet(payload, token).json()
+        return response
     except Exception as e:
-        logging.error(f"Error during callback: {e}")
+        print(f"Error during callback: {e}")
         return f"Internal Server Error: {e}", 500
-
 
 if __name__ == "__main__":
     print(app.url_map)
