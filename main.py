@@ -72,7 +72,7 @@ def callback():
         logging.info(f"Token fetched: {token}")
 
         # Store directly as a JSON string to avoid unnecessary conversions
-        r.set("based_token", json.dumps(token))  
+        r.set("token", json.dumps(token))  
         logging.info("Token saved in Redis")
         # ... (rest of the code remains the same)
         doggie_fact = parse_dog_fact()
