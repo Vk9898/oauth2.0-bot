@@ -9,7 +9,7 @@ r = redis.from_url(os.environ["REDIS_URL"])
 
 # Twitter API Configuration
 def load_user_access_token():
-    token_data = r.get("user_token")
+    token_data = r.get("token")
     if token_data:
         return json.loads(token_data)
     else:
