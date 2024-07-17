@@ -41,12 +41,17 @@ def get_bot_info():
     if response.status_code == 200:
         return response.json()["data"]
     else:
-        print(f"Error fetching bot info: {response.status_code}")
+        print(f"Error fetching bot info: {response.status_code}, {response.text}")
         return None
 
 bot_info = get_bot_info()
-BOT_USERNAME = bot_info["username"]
-BOT_ID = bot_info["id"]
+if bot_info:
+    BOT_USERNAME = bot_info["username"]
+    BOT_ID = bot_info["id"]
+    print(f"Bot username: {BOT_USERNAME}, Bot ID: {BOT_ID}")
+else:
+    print("Failed to retrieve bot info. Exiting.")
+    exit(1)
 
 # Chatbase API details
 CHATBASE_API_KEY = os.environ.get('CHATBASE_API_KEY')
@@ -87,7 +92,7 @@ def get_recent_mentions(since_id=None):
     if response.status_code == 200:
         return response.json()
     else:
-        print(f"Error fetching mentions: {response.status_code}")
+        print(f"Error fetching mentions: {response.status_code}, {response.text}")
         return None
 
 def post_reply(tweet_id, text, author_id):
@@ -96,13 +101,12 @@ def post_reply(tweet_id, text, author_id):
         "Content-Type": "application/json"
     }
     payload = {
-        "status": f"@{author_id} {text}",
-        "in_reply_to_status_id": tweet_id,
-        "auto_populate_reply_metadata": True
+        "text": f"@{author_id} {text}",
+        "in_reply_to_tweet_id": tweet_id
     }
     response = requests.post("https://api.twitter.com/2/tweets", headers=headers, json=payload)
     if response.status_code != 201:
-        print(f"Error posting reply: {response.status_code}")
+        print(f"Error posting reply: {response.status_code}, {response.text}")
 
 def process_mentions():
     since_id = fetch_last_processed_mention_id()
@@ -164,6 +168,10 @@ def callback():
             code=code,
             code_verifier=code_verifier,
         )
+        # Save the token if needed
+        with open("token.json", "w") as token_file:
+            json.dump(token, token_file)
+
         payload = {"text": "Hello, world!"}
         post_tweet(payload, token)
         return "Tweet posted successfully!"
