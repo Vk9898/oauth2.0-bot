@@ -1,4 +1,4 @@
-import main 
+import v2authmain
 import json
 import os
 
