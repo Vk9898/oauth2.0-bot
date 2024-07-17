@@ -9,12 +9,20 @@ r = redis.from_url(os.environ["REDIS_URL"])
 
 # Twitter API Configuration
 def load_user_access_token():
-    token_data = r.get("token")
+    token_data = r.get("user_token")
     if token_data:
+        # Convert bytes to string (if needed)
+        if isinstance(token_data, bytes):
+            token_data = token_data.decode('utf-8')
+
+        # Remove the surrounding quotes if they exist
+        token_data = token_data.strip('"')
+
+        # Parse the token string into a dictionary
         return json.loads(token_data)
     else:
-        print("User access token not found in Redis. Exiting.")
-        exit(1)
+        print("User access token not found in Redis.")
+        return None
     
 bearer_token = load_user_access_token().get("access_token", None)
 if bearer_token is None:
